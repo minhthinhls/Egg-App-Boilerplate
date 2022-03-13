@@ -63,9 +63,10 @@ export default (appInfo: EggAppInfo): RecursivePartial<IEggAppConfig> => ({
 
   security: {
     csrf: false,
+    /** Setup Base Whitelist Domains for Egg-Application ~!*/
     domainWhiteList: [
-      '*', // TODO: Refactor on later version.
-      $ENV.VCASH_MEMBER_CLIENT_SITE,
+      '*', // TODO: Currently whitelist all feasible domains. Consider refactor on later version.
+      $ENV.WHITE_LIST_DOMAIN_URL,
     ].filter(Boolean),
   },
 
@@ -93,17 +94,23 @@ export default (appInfo: EggAppInfo): RecursivePartial<IEggAppConfig> => ({
     client: {
       url: [
         `mongodb://`,
-        `${encodeURIComponent($ENV.MONGO_USER as string)}`,
-        `:`,
-        `${encodeURIComponent($ENV.MONGO_PASS as string)}`,
-        `@`,
+        $ENV.MONGO_USER && $ENV.MONGO_PASS && [
+          `${encodeURIComponent($ENV.MONGO_USER || `${$ENV.MONGO_USER}` as string)}`,
+          `:`,
+          `${encodeURIComponent($ENV.MONGO_PASS || `${$ENV.MONGO_USER}` as string)}`,
+          `@`,
+        ].join(""),
         `${$ENV.MONGO_HOST}`,
         `:`,
         `${$ENV.MONGO_PORT}`,
         `/`,
         `${$ENV.MONGO_DB}`,
-      ].join(""),
-      options: {},
+      ].filter(Boolean).join(""),
+      /** Alternative Options for Authorization without Encoded URI Basic Auth ~!*/
+      options: {
+        user: $ENV.MONGO_USER,
+        pass: $ENV.MONGO_PASS,
+      },
       /** Mongoose global plugins, expected a function or an array of function and options !*/
       // plugins: [createdPlugin, [updatedPlugin, pluginOptions]],
     },

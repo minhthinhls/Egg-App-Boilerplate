@@ -1,4 +1,4 @@
-/* eslint valid-jsdoc: "off", complexity: "off", no-unused-vars: "off", @typescript-eslint/naming-convention: "off" */
+/* eslint valid-jsdoc: "off", complexity: "off", no-unused-vars: "off", no-multi-assign: "off", @typescript-eslint/naming-convention: "off" */
 
 /** @ts-nocheck - Turn this on to ignore this file !*/
 
@@ -12,7 +12,7 @@ import type {Moment, MomentTimezone} from "moment-timezone";
 import type {Path, Traverse} from "@/extend/types";
 import type {FindOptions} from "sequelize/types";
 /** Import ES6 Default Type Dependencies !*/
-import type {LeanDocument} from "mongoose";
+import type {Document, LeanDocument, ObjectId} from "mongoose";
 /** Import ES6 Default Dependencies !*/
 import {isPlainObject, isSafeInteger} from "lodash";
 import {has, debounce, cloneDeep} from "lodash";
@@ -568,6 +568,131 @@ export const delimiter = <T extends Array<string> | Nullable | string>(argument:
 
 export namespace mongoose {
 
+    declare type IDocument = Primitives | ObjectId | Document<ObjectId>;
+
+    declare interface IComparator extends Required<{
+        /* [[Mandatory Attributes Placeholder]] */
+    }>, Partial<{
+        /* [[Optional Attributes Placeholder]] */
+        $in: Array<IDocument>;
+        $nin: Array<IDocument>;
+        $gt: IDocument;
+        $gte: IDocument;
+        $lt: IDocument;
+        $lte: IDocument;
+    }> {
+        /* [[Default Attributes Placeholder]] */
+    }
+
+    declare interface IQueryHelper<O extends PlainObject = {}> extends Required<{
+        /* [[Mandatory Attributes Placeholder]] */
+    }>, Partial<{
+        /* [[Optional Attributes Placeholder]] */
+    }>, PlainObject<string, IComparator> {
+        /* [[Default Attributes Placeholder]] *//* @ts-ignore */
+        $or: Array<IQueryHelper>;
+    }
+
+    /**
+     ** - For storing all RegExp that has been built.
+     ** @protected
+     ** @type {PlainObject<string, RegExp>}
+     **/
+    export const __RegexPool__: PlainObject<string, RegExp> = {};
+
+    /**
+     ** - Query with Comparator to filter Mongoose Records within NodeJS Allocated Memory Instance.
+     ** @example
+     ** //====================================================================//
+     ** > const willKeep = compare(1997, {
+     **   $in: [1997, 1998, 1999, 2000],
+     **   $nin: [1993, 1994, 1995, 1996],
+     **   $gt: 1990,
+     ** });
+     ** > console.log(willKeep === true); // returns true;
+     ** //====================================================================//
+     ** > const willKeep = compare(1997, {
+     **   $in: [1997, 1998, 1999, 2000],
+     **   $nin: [1997, 1994, 1995, 1996],
+     **   $gt: 1997,
+     ** });
+     ** > console.log(willKeep === false); // returns false;
+     ** //====================================================================//
+     ** @template T
+     ** @param {Primitives | Document<ObjectId>} target
+     ** @param {Primitives | IComparator} comparator
+     ** @returns {boolean} - Returns <true> whether `$target` satisfy `$comparator`.
+     **/
+    export function compare(target: Primitives | Document<ObjectId>, comparator: Primitives | IComparator): boolean {
+        /** Joint Condition to decide whether this record satisfy `$comparator` after process execution ~!*/
+        let __joint__ = true;
+        /** - In case Attributes has been populated, then check its `_id` instead.
+         ** - But sometime, populated attributes failed joining Nullable Record ~!*/
+        const __target__ = (typeof target === "object" && target !== null) && target._id?.toString() || target?.toString() || target;
+        /** TODO: Currently support only [`$in`, `$nin`, `$gt`, `$gte`, `$lt`, `$lte`] operator ~!*/
+        if (typeof comparator === "object") {
+            /** Join condition on every check includes ~!*/
+            if (comparator?.$in && typeof comparator.$in === "object") {
+                __joint__ = comparator?.$in?.includes(__target__) && __joint__;
+            }
+            /** Join condition on every check not includes ~!*/
+            if (comparator?.$nin && typeof comparator.$nin === "object") {
+                __joint__ = !(comparator?.$nin?.includes(__target__)) && __joint__;
+            }
+            /** Join condition on every check via ``$greater_than`` Operator ~!*/
+            if (typeof comparator?.$gt === "number") {
+                __joint__ = (comparator.$gt < (__target__ as number)) && __joint__;
+            }
+            /** Join condition on every check via ``$greater_than_or_equal`` Operator ~!*/
+            if (typeof comparator?.$gte === "number") {
+                __joint__ = (comparator.$gte <= (__target__ as number)) && __joint__;
+            }
+            /** Join condition on every check via ``$less_than`` Operator ~!*/
+            if (typeof comparator?.$lt === "number") {
+                __joint__ = (comparator.$lt > (__target__ as number)) && __joint__;
+            }
+            /** Join condition on every check via ``$less_than_or_equal`` Operator ~!*/
+            if (typeof comparator?.$lte === "number") {
+                __joint__ = (comparator.$lte >= (__target__ as number)) && __joint__;
+            }
+        } else {
+            /** Regular Expression value of filter ~!*/
+            if (typeof comparator === "string" && comparator.startsWith("/")) {
+                let builtRegExp = __RegexPool__[comparator];
+                if (!builtRegExp) {
+                    const partitionIndex = comparator.lastIndexOf("/");
+                    const regex = comparator.slice(1, partitionIndex);
+                    const flag = comparator.slice(partitionIndex + 1);
+                    /** Cache Built RegExp ~!*/
+                    builtRegExp = __RegexPool__[comparator] = new RegExp(regex, flag);
+                }
+                /** Regular Expression value of filter ~!*/
+                __joint__ = builtRegExp.test(target as string) && __joint__;
+            } else {
+                /** Primitives value of filter ~!*/
+                __joint__ = (comparator === target) && __joint__;
+            }
+        }
+        return __joint__;
+    }
+
+    export const __RegExp__ = {
+        validObjectId: new RegExp("^[0-9a-fA-F]{24}$"),
+    };
+
+    export namespace ObjectId {
+        export function isValid(_id: string | ObjectId) {
+            if (typeof _id !== "string" && typeof _id !== "object") {
+                return false;
+            }
+            if (typeof _id === "object") {
+                /** Mongoose ver6 can stringify ObjectId correctly, unlike ver3 ~!*/
+                return __RegExp__.validObjectId.test(_id.toString());
+            }
+            return __RegExp__.validObjectId.test(_id);
+        }
+    }
+
     /**
      ** - Querying Mongoose Records within NodeJS Allocated Memory Instance.
      ** @template T
@@ -587,7 +712,7 @@ export namespace mongoose {
 
         const data: Array<Partial<T>> = [];
         const length = records.length;
-        const select = delimiter(projection?.select);
+        const select = delimiter(projection?.select, /[, ;]/g);
 
         const conditionKeys = Object.keys(projection?.condition || {});
         /** HIGH PERFORMANCE FOR-LOOP ~!*/
@@ -597,23 +722,27 @@ export namespace mongoose {
             let skipRecord = false;
             for (let k = 0; k < conditionKeys.length; k++) {
                 const key = conditionKeys[k];
-                const filter: Partial<{$in: Array<any>, $nin: Array<any>}> | Primitives = projection?.condition?.[key];
-                /** - In case Attributes has been populated, then check its `_id` instead.
-                 ** - But sometime, populated attributes failed joining Nullable Record ~!*/
-                const comparator = (typeof record[key] === "object" && record[key] !== null) && record[key]._id?.toString() || record[key].toString();
-                /** TODO: Currently support only `$in` and `$nin` operator ~!*/
-                if (typeof filter === "object") {
-                    /** Join skipper on every check includes ~!*/
-                    if (filter?.$in) {
-                        skipRecord = !(filter?.$in?.includes(comparator)) || skipRecord;
+                const condition: Primitives | IQueryHelper = projection?.condition?.[key];
+                /** TODO: Whether key equals `$or` operator. Will not skip if there are at least 1 condition matched ~!*/
+                if (key === "$or" && typeof condition === "object") {
+                    let willKeep = false;
+                    const length = condition?.length || 0;
+                    for (let argc = 0; argc < length; argc++) {
+                        const subCondition = (condition as NonNullable<typeof condition>)[argc];
+                        const subConditionKeys = Object.keys(subCondition || {});
+                        for (let subIndex = 0; subIndex < subConditionKeys.length; subIndex++) {
+                            const subKey = subConditionKeys[subIndex];
+                            willKeep = compare(record[subKey], subCondition[subKey]) || willKeep; // Only skip when all arguments failed !
+                        }
                     }
-                    /** Join skipper on every check not includes ~!*/
-                    if (filter?.$nin) {
-                        skipRecord = !!(filter?.$nin?.includes(comparator)) || skipRecord;
-                    }
+                    skipRecord = !willKeep || skipRecord;
                 } else {
-                    /** Primitives value of filter ~!*/
-                    skipRecord = (filter !== record[key]) || skipRecord;
+                    /** WHETHER COMPARING TWO MONGOOSE OBJECT-ID. TYPE CHECKING MUST BE STRINGIFY PARSED ~!*/
+                    if (ObjectId.isValid(condition as string) && ObjectId.isValid(record[key])) {
+                        skipRecord = !compare((record[key] as ObjectId).toString(), condition as Primitives) || skipRecord;
+                    } else {
+                        skipRecord = !compare(record[key], condition as Primitives) || skipRecord;
+                    }
                 }
                 /** Will not need to check this record anymore ~!*/
                 if (skipRecord) {
@@ -623,16 +752,24 @@ export namespace mongoose {
             if (skipRecord) {
                 continue;
             }
+
+            /** COPY INSTANCE FOR SERIALIZING CLIENT RESPONSE DATA ~!*/
+            const __copy__ = {};
             /** WHETHER SELECT IS NOT AN OPTION. FETCH EVERY ATTRIBUTES ~!*/
             if (!select && typeof select !== "string") {
-                data.push(record);
-                continue;
+                const keys = Object.keys(record);
+                const numKeys = keys.length;
+                for (let k = 0; k < numKeys; k++) {
+                    const key = keys[k];
+                    __copy__[key] = record[key]?._id?.toString() || record[key];
+                }
             }
             /** HIGH PERFORMANCE ATTRIBUTES PICKER ~!*/
-            const __copy__ = {};
-            for (let k = 0; k < select.length; k++) {
-                const key = select[k];
-                __copy__[key] = record[key]?._id?.toString() || record[key];
+            if (select && typeof select === "object") {
+                for (let k = 0; k < select.length; k++) {
+                    const key = select[k];
+                    __copy__[key] = record[key]?._id?.toString() || record[key];
+                }
             }
             /** HIGH PERFORMANCE POPULATED ATTRIBUTES PICKER ~!*/
             const populateKeys = Object.keys(projection?.populate || {});
@@ -645,7 +782,7 @@ export namespace mongoose {
                 if (Array.isArray(value) && value.length > 0 && typeof value[0] !== "string") {
                     continue; // Skip this populated since its format violate Mongoose Populate Rule.
                 }
-                const select = delimiter(value);
+                const select = delimiter(value, /[, ;]/g);
 
                 /** WHETHER POPULATE KEYS SELECTION IS NOT AN OPTION. FETCH EVERY ATTRIBUTES ~!*/
                 if (!select || !select.length) {
