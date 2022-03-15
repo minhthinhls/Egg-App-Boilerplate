@@ -439,6 +439,109 @@ export const debounceFn = <T extends ArrowFunc = ArrowFunc>(
     }) as IDebounceFunction<T>;
 };
 
+export class BenchMarker {
+
+    /** @description - Key will be combined [label, msg, timestamp]. Value is `timestamp` ~!*/
+    private readonly __TimeTable__: PlainObject<string, number> = {};
+    /** @description - Key will be combined [label, msg, timestamp]. Value is `memory` ~!*/
+    private readonly __MemoTable__: PlainObject<string, number> = {};
+
+    constructor() {
+        this.__TimeTable__ = {};
+        this.__MemoTable__ = {};
+    }
+
+    protected hash(...args: Array<Primitives>) {
+        return args.filter(Boolean).map(String).join("-");
+    }
+
+    /**
+     ** @param {string} label
+     ** @param {string | null} [msg]
+     ** @returns {number} -- Time starting this benchmark.
+     **/
+    public start(label: string, msg?: string | null): number {
+        const timeStart = Date.now();
+        const memoStart = process.memoryUsage().heapUsed / 1024 / 1024;
+        const hashKey = this.hash(label, msg, timeStart);
+        this.__TimeTable__[hashKey] = timeStart;
+        this.__MemoTable__[hashKey] = memoStart;
+        /** Whether `this.end()` method does not provide `timeStart` ~!*/
+        this.__TimeTable__[this.hash(label, msg)] = timeStart;
+        /** Whether `this.end()` method does not provide `timeStart` ~!*/
+        this.__MemoTable__[this.hash(label, msg)] = memoStart;
+        return timeStart;
+    }
+
+    /**
+     ** @param {string} label
+     ** @param {string | null} [msg]
+     ** @param {number} [timeStart]
+     ** @returns {Required<{
+     **   time: [number, number, number] | Array<number>,
+     **   memo: [number, number, number] | Array<number>,
+     ** }>} -- Call this function when finish this benchmark strategy.
+     **/
+    protected finish(label: string, msg?: string | null, timeStart?: number): Required<{
+        time: [number, number, number];
+        memo: [number, number, number];
+    }> {
+        const __TimeEnd__ = Date.now();
+        const __MemoEnd__ = process.memoryUsage().heapUsed / 1024 / 1024;
+        const hashKey = this.hash(label, msg, timeStart);
+        const __TimeStart__ = timeStart ? this.__TimeTable__[hashKey] : this.__TimeTable__[this.hash(label, msg)];
+        const __MemoStart__ = timeStart ? this.__MemoTable__[hashKey] : this.__MemoTable__[this.hash(label, msg)];
+        return ({
+            time: [__TimeStart__, __TimeEnd__, __TimeEnd__ - __TimeStart__],
+            memo: [__MemoStart__, __MemoEnd__, __MemoEnd__ - __MemoStart__],
+        });
+    }
+
+    /**
+     ** @param {number} milliseconds
+     ** @returns {Array<string | number>}
+     **/
+    protected millisToMinutesAndSeconds = (milliseconds: number): Array<string | number> => {
+        const [second, minute/*, hour*/] = [1000, 60000, 3600000];
+        const minutes = Math.floor(milliseconds / minute);
+        milliseconds %= minute;
+        const seconds = Math.floor(milliseconds / second);
+        milliseconds %= second;
+        return [minutes, "m:", seconds < 10 ? 0 : '', seconds, 's', milliseconds, 'ms'];
+    };
+
+    protected printTime(time: Array<number>, label: string, msg?: string | null): void {
+        const [/*start*/, /*finish*/, different] = time;
+        console.log(`>>> ${label} [${msg || ''}] ~ TIME DIFFERENCES:`, ...this.millisToMinutesAndSeconds(different));
+    }
+
+    protected printMemo(memo: Array<number>, label: string, msg?: string | null): void {
+        const [start, finish, different] = memo;
+        const parse = (value: number) => Number.parseFloat((value || NaN).toFixed(3));
+        console.log(`>>> ${label} [${msg || ''}] ~ MEMORY DIFFERENCES:`, parse(start), '->', parse(finish), '===', parse(different), 'MegaBytes <<<');
+    }
+
+    /**
+     ** @param {string} label
+     ** @param {string | null} [msg]
+     ** @param {number} [timeStart]
+     ** @returns {void} -- Call this function when finish this benchmark strategy.
+     **/
+    public end(label: string, msg?: string | null, timeStart?: number): void {
+        const {time, memo} = this.finish(label, msg, timeStart);
+        this.printTime(time, label, msg);
+        this.printMemo(memo, label, msg);
+        /** Flush data to avoid memory leak ~!*/
+        if (typeof timeStart === "number") {
+            delete this.__TimeTable__[this.hash(label, msg, timeStart)];
+            delete this.__MemoTable__[this.hash(label, msg, timeStart)];
+        }
+    }
+
+}
+
+export const __BenchMarker__ = new BenchMarker();
+
 /**
  ** - A custom benchmark function that can estimate both Sync and Async Functions:
  ** @see {@link https://stackoverflow.com/questions/38508420/how-to-know-if-a-function-is-async}
@@ -447,27 +550,29 @@ export const debounceFn = <T extends ArrowFunc = ArrowFunc>(
  ** > ctx.helper.benchmark(() => {
  **     return void 0;
  ** });
+ ** > ctx.helper.benchmark(() => {
+ **     return Promise.resolve(void 0);
+ ** });
  ** > ctx.helper.benchmark(async () => {
  **     return void 0;
  ** });
  ** @param {ArrowFunc<R>} callbackFn
+ ** @param {string} [message]
  ** @returns {ReturnType<ArrowFunc<R>>}
  **/
 export const benchmark = <R extends Promise<unknown> | Primitives | Object, F extends ArrowFunc<R> = ArrowFunc<R>>(
     callbackFn: F,
+    message?: string,
 ): ReturnType<F> => {
     const isAsyncFunc = callbackFn.constructor.name === "AsyncFunction";
     /** START BENCHMARK ~!*/
-    const startMemory = process.memoryUsage().heapUsed / 1024 / 1024;
-    console.time(`>>> BENCHMARK ${isAsyncFunc ? 'ASYNCHRONOUS' : 'SYNCHRONOUS'} FUNCTION <<<`);
+    const startTime = __BenchMarker__.start(`BENCHMARK ${isAsyncFunc ? 'ASYNCHRONOUS' : 'SYNCHRONOUS'} FUNCTION`, message || null);
     /** START BENCHMARK ~!*/
 
     if (callbackFn.constructor.name === "AsyncFunction") {
         return (callbackFn() as Promise<R>).then((output) => {
             /** END BENCHMARK ~!*/
-            console.timeEnd(`>>> BENCHMARK ASYNCHRONOUS FUNCTION <<<`);
-            const finishMemory = process.memoryUsage().heapUsed / 1024 / 1024;
-            console.log('>>> MEMORY DIFFERENCES:', Number.parseFloat((finishMemory - startMemory).toFixed(3)), 'MegaBytes <<<');
+            __BenchMarker__.end(`BENCHMARK ASYNCHRONOUS FUNCTION`, message || null, startTime);
             /** END BENCHMARK ~!*/
             return output;
         }) as ReturnType<F>;
@@ -482,17 +587,13 @@ export const benchmark = <R extends Promise<unknown> | Primitives | Object, F ex
     if (output instanceof Promise) {
         return output.then((output) => {
             /** END BENCHMARK ~!*/
-            console.timeEnd(`>>> BENCHMARK SYNCHRONOUS FUNCTION <<<`);
-            const finishMemory = process.memoryUsage().heapUsed / 1024 / 1024;
-            console.log('>>> MEMORY DIFFERENCES:', Number.parseFloat((finishMemory - startMemory).toFixed(3)), 'MegaBytes <<<');
+            __BenchMarker__.end(`BENCHMARK SYNCHRONOUS FUNCTION`, message || null, startTime);
             /** END BENCHMARK ~!*/
             return output;
         }) as ReturnType<F>;
     }
     /** END BENCHMARK ~!*/
-    console.timeEnd(`>>> BENCHMARK SYNCHRONOUS FUNCTION <<<`);
-    const finishMemory = process.memoryUsage().heapUsed / 1024 / 1024;
-    console.log('>>> MEMORY DIFFERENCES:', Number.parseFloat((finishMemory - startMemory).toFixed(3)), 'MegaBytes <<<');
+    __BenchMarker__.end(`BENCHMARK SYNCHRONOUS FUNCTION`, message || null, startTime);
     /** END BENCHMARK ~!*/
     return output as ReturnType<F>;
 };
