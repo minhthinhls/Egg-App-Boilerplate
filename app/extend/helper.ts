@@ -26,6 +26,8 @@ export declare type AsyncTask<T> = () => Promise<T>;
 /** Custom Types Helper !*/
 export declare type ArrowFunc<T extends any = any> = (...args: any) => T;
 /** Custom Types Helper !*/
+export declare type Await<T> = T extends Promise<infer R> ? R : T;
+/** Custom Types Helper !*/
 export declare type IndexSignatures = string | number | symbol;
 /** Custom Types Helper !*/
 export declare type Primitives = boolean | IndexSignatures | Nullable;
@@ -353,14 +355,14 @@ export const promisify = <F extends (...args: any) => any>(callback: F, timeout?
  ** }));
  **
  ** // Executing Asynchronous Tasks from Micro Tasks API.
- ** return await exec(microTasks) || await exec(...microTasks);
+ ** return await execParallel(microTasks) || await execParallel(...microTasks);
  **
  ** @template T
  ** @param {AsyncTask<T> | Array<AsyncTask<T>>} task
  ** @param {Array<AsyncTask<T>>} [tasks]
- ** @returns {Promise<T>}
+ ** @returns {Promise<Array<T>>}
  **/
-export const exec = <T>(task: AsyncTask<T> | Array<AsyncTask<T>>, ...tasks: Array<AsyncTask<T>>) => {
+export const execParallelMicroTasks = <T>(task: AsyncTask<T> | Array<AsyncTask<T>>, ...tasks: Array<AsyncTask<T>>): Promise<Array<T>> => {
     const __TYPE_ERROR_MESSAGE__ = '>>> NOT SUPPORTED METHOD ARGUMENTS <<<';
     if (Array.isArray(task)) {
         if (tasks[0] !== undefined) {
@@ -386,6 +388,99 @@ export const exec = <T>(task: AsyncTask<T> | Array<AsyncTask<T>>, ...tasks: Arra
     return Promise.all([
         ...[task, ...tasks].map((task) => task()),
     ]);
+};
+
+/**
+ ** - Execute all Asynchronous Callback with Serializable Strategy inside Iterable Collection.
+ ** - An enhanced version of <b>``${Array.reduce((prev, curr) => {prev.then(curr); return curr;})}``</b>
+ ** @example
+ **
+ ** // Generate Micro Tasks API to push Asynchronous Tasks into Tasks Collection.
+ ** const microTasks<T>: Array<(params: any) => Promise<T>> = [];
+ **
+ ** // Add Asynchronous Tasks to Micro Tasks API.
+ ** microTasks.push(async (params: any) => new Promise((resolve, reject) => {
+ **     return resolve(value);
+ ** }));
+ **
+ ** // Executing Asynchronous Tasks from Micro Tasks API. The first argument is the resolved value of the previous task.
+ ** > return await execSerialize((prevResolved, asyncMicroTask) => {...}, microTasks);
+ ** // Asynchronous Micro Tasks as 2nd argument is the current callback pushed to the above Array: `microTasks`.
+ ** > return await execSerialize((prevResolved, asyncMicroTask) => {...}, ...microTasks);
+ **
+ ** @template R, F
+ ** @param {function(resolved: Await<R>, asyncMicroTask: AsyncTask<R>): R | Promise<R>} callback
+ ** @param {AsyncTask<R> | Array<AsyncTask<R>>} task
+ ** @param {Array<AsyncTask<R>>} [tasks]
+ ** @returns {Promise<Array<R>>}
+ **/
+export const execSerializeMicroTasks = <R extends ReturnType<F>, F extends ArrowFunc>(
+    callback: (resolved: Await<R>, asyncMicroTask: F) => R | Promise<R>,
+    task: F | Array<F>, ...tasks: Array<F>
+): Promise<Array<Awaited<R>>> => {
+    const __TYPE_ERROR_MESSAGE__ = '>>> NOT SUPPORTED METHOD ARGUMENTS <<<';
+    const serializeMicroTasks: Array<Promise<R>> = [];
+
+    /**
+     ** @description
+     ** - Serializing Asynchronous Function into Multiple Continuous Execution Batch.
+     ** - ~!*/
+    const execMicroTasks = (microTasks: Array<F>): Promise<R | null> => {
+        return microTasks.reduce((prevAsyncTask, asyncMicroTask) => {
+            const currAsyncTask = prevAsyncTask.then((resolved) => {
+                /** First time running [[resolved === `null`]] ~!*/
+                if (typeof resolved === "object" && resolved === null) {
+                    return asyncMicroTask();
+                }
+                if (typeof callback === "function") {
+                    return callback(resolved as Await<R>, asyncMicroTask);
+                }
+                /** Default strategy when callback has not been typed as function ~!*/
+                return asyncMicroTask();
+            });
+            serializeMicroTasks.push(currAsyncTask);
+            return currAsyncTask;
+        }, new Promise(resolve => resolve(null)) as Promise<R | null>);
+    };
+
+    if (Array.isArray(task)) {
+        if (tasks[0] !== undefined) {
+            throw new TypeError(__TYPE_ERROR_MESSAGE__);
+        }
+        for (let i = 0; i < task.length; i++) {
+            const microTask = task[i];
+            if (typeof microTask !== "function") {
+                throw new TypeError(__TYPE_ERROR_MESSAGE__);
+            }
+        }
+        /**
+         ** @description
+         ** - Awaiting `execMicroTasks()` to make sure all batch are successfully fetched.
+         ** - Awaiting `serializeMicroTasks` to unwrap all [Promise<records>, Promise<records>, ...] into [<records>, <records>, ...].
+         **/
+        return execMicroTasks([...task]).then(() => {
+            return Promise.all([
+                ...serializeMicroTasks,
+            ]);
+        });
+    }
+    const allTasks = [task, ...tasks];
+    for (let i = 0; i < allTasks.length; i++) {
+        const microTask = allTasks[i];
+        if (typeof microTask !== "function") {
+            throw new TypeError(__TYPE_ERROR_MESSAGE__);
+        }
+    }
+    /**
+     ** @description
+     ** - Awaiting `execMicroTasks()` to make sure all batch are successfully fetched.
+     ** - Awaiting `serializeMicroTasks` to unwrap all [Promise<records>, Promise<records>, ...] into [<records>, <records>, ...].
+     **/
+    return execMicroTasks([...[task, ...tasks]]).then(() => {
+        return Promise.all([
+            ...serializeMicroTasks,
+        ]);
+    });
 };
 
 /**

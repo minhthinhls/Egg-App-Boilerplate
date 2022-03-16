@@ -21,7 +21,7 @@ module.exports = {
     sourceType: "module",
   },
   globals: {
-    page: true,
+    Awaited: true,
     NodeJS: true,
     WeakMap: false,
     WeakSet: false,
